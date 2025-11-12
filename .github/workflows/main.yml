@@ -18,7 +18,7 @@ jobs:
           chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
           # Establish an SSH connection and execute commands on the remote server
-          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt rebel@34.72.79.26 <<EOF  
+          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt bcumbie@35.208.101.221 <<EOF  
             # Here Document, allows for multiple commands while connectd to server 
             cd solid-guide-subdomain #go to repo
             npm ci
