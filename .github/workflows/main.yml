@@ -30,6 +30,8 @@ jobs:
           chmod 600 private_key.pem
 
           # Run commands on the VM (note the quoted EOF)
+          ssh -vvv -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem "$SSH_USER@$SSH_HOST" 'echo OK && exit' || true
+
           ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -tt "$SSH_USER@$SSH_HOST" <<'EOF'
             set -euo pipefail
             export PATH="$PATH:$(npm config get prefix)/bin:/usr/local/bin:/usr/bin"
