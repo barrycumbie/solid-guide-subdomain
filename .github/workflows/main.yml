@@ -19,12 +19,11 @@ jobs:
           APP_NAME: ideas-app
           APP_ENTRY: app.mjs
           APP_PORT: 3000
-        shell: bash
         run: |
           echo "$PRIVATE_KEY" > private_key.pem # Write the private key to a file
           chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
-            cd "$HOME/solid-guide-subdomain" || cd "$REPO_DIR"
+            cd solid-guide-subdomain # "$HOME/solid-guide-subdomain" || cd "$REPO_DIR"
             
             # Update code first
             git pull --ff-only
