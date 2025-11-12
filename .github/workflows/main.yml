@@ -1,4 +1,20 @@
-      - name: SSH debug
+name: Deploy Ideas
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ideas
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+            - name: SSH debug
         env:
           PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_USER: bcumbie
@@ -19,3 +35,63 @@
 
           echo "Trying SSH with -vvv…"
           ssh -vvv -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem "$SSH_USER@$SSH_HOST" 'echo OK && exit' || true
+
+    
+      - name: Deploy via SSH (PM2)
+        env:
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_USER: bcumbie
+          SSH_HOST: 35.208.101.221
+          REPO_DIR: /home/bcumbie/solid-guide-subdomain
+          APP_NAME: ideas-app
+          APP_ENTRY: app.mjs
+          APP_PORT: 3000
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Ensure secret available (avoids silent failures)
+          if [ -z "${PRIVATE_KEY:-}" ]; then
+            echo "::error::SSH_PRIVATE_KEY is empty. Use push/workflow_dispatch (not pull_request)."
+            exit 1
+          fi
+
+          # Write SSH key (strip CRLF just in case)
+          printf '%s' "$PRIVATE_KEY" | tr -d '\r' > private_key.pem
+          chmod 600 private_key.pem
+
+          # Preflight (optional, helpful when debugging)
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem "$SSH_USER@$SSH_HOST" 'echo "SSH OK on $(hostname)"'
+
+          # Remote ops (quote EOF to avoid local var expansion)
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -tt "$SSH_USER@$SSH_HOST" << "EOF"
+            set -euo pipefail
+
+            # Ensure pm2 is on PATH for non-login shells
+            export PATH="$PATH:$(npm config get prefix)/bin:/usr/local/bin:/usr/bin"
+
+            cd "/home/bcumbie/solid-guide-subdomain"
+
+            # Update code first
+            git pull --ff-only
+
+            # Install deps (use ci only if lockfile exists)
+            if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev
+            fi
+
+            # Idempotent PM2 (restart if exists; else start)
+            if pm2 describe "ideas-app" >/dev/null 2>&1; then
+              PORT=3000 pm2 restart "ideas-app" --update-env
+            else
+              PORT=3000 pm2 start "app.mjs" --name "ideas-app" --env production
+            fi
+
+            pm2 save
+            exit
+          EOF
+
+          rm -f private_key.pem
+
