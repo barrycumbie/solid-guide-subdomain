@@ -7,84 +7,25 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Run this job on the latest Ubuntu version
 
     steps:
-      - name: Deploy via SSH (with diagnostics and safer fallbacks)
+      - name: Start odea
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_USER: bcumbie
-          SSH_HOST: 35.208.101.221
-        shell: bash
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }} # Reference the private key stored in GitHub Secrets
         run: |
-          set -euo pipefail
+          echo "$PRIVATE_KEY" > private_key.pem # Write the private key to a file
+          chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
-          echo "--- Workflow environment ---"
-          echo "GITHUB_REF=$GITHUB_REF"
-          echo "GITHUB_SHA=$GITHUB_SHA"
-          echo "Runner: $(uname -a)"
-
-          # Ensure secret available
-          if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
-            echo "::error:: SSH_PRIVATE_KEY is empty (secrets are not available on pull_request)."
-            exit 1
-          fi
-
-          # Write key (strip CRLF just in case)
-          printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > private_key.pem
-          chmod 600 private_key.pem
-
-          echo "Testing SSH connectivity to $SSH_USER@$SSH_HOST"
-          # Test SSH quickly and fail on error so the logs surface the issue
-          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -o ConnectTimeout=10 "$SSH_USER@$SSH_HOST" 'echo SSH_OK' 
-
-          echo "SSH probe succeeded, starting remote deploy commands"
-
-          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -tt "$SSH_USER@$SSH_HOST" <<'EOF'
-            set -euo pipefail
-
-            echo "---- Remote diagnostics ----"
-            echo "user: $(whoami)"
-            echo "cwd: $(pwd)"
-            echo "node: $(node -v || echo 'node missing')"
-            echo "npm: $(npm -v || echo 'npm missing')"
-            echo "pm2: $(pm2 -v || echo 'pm2 missing')"
-
-            export PATH="$PATH:$(npm config get prefix)/bin:/usr/local/bin:/usr/bin"
-
-            # go to your repo
-            cd "$HOME/solid-guide-subdomain" || cd "/home/bcumbie/solid-guide-subdomain"
-
-            # pull latest first
-            echo "Running: git pull --ff-only"
-            git pull --ff-only
-
-            # install deps (ci only if lock exists), include fallbacks for older npm
-            if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-              echo "Lockfile found. Attempting npm ci (production-only)..."
-              npm ci --omit=dev || npm ci --only=production || npm install --omit=dev
-            else
-              echo "No lockfile, running npm install --omit=dev"
-              npm install --omit=dev
-            fi
-
-            # idempotent PM2 start/restart (check pm2 exists first)
-            if command -v pm2 >/dev/null 2>&1; then
-              if pm2 describe "ideas-app" >/dev/null 2>&1; then
-                echo "Restarting pm2 process ideas-app"
-                PORT=3000 pm2 restart "ideas-app" --update-env
-              else
-                echo "Starting pm2 process ideas-app"
-                PORT=3000 pm2 start "app.mjs" --name "ideas-app" --env production
-              fi
-
-              pm2 save || true
-            else
-              echo "pm2 not installed; please install pm2 on the remote host or adapt the deployment." >&2
-              exit 2
-            fi
-
-            exit
+          # Establish an SSH connection and execute commands on the remote server
+          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt rebel@34.72.79.26 <<EOF  
+            # Here Document, allows for multiple commands while connectd to server 
+            cd solid-guide-subdomain #go to repo
+            npm ci
+            pm2 delete app #in case the website is currently running
+            git pull #update repo
+            pm2 start app.mjs #start the updated app
+            exit  
           EOF
 
-          rm -f private_key.pem
+          rm -f private_key.pem # Remove the private key file after use for security
