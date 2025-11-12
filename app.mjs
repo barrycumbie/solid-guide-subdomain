@@ -15,7 +15,7 @@ app.use(express.json());
 // app.use(express.static(join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
-  res.send('Hello Express from CI/CD 😍😍.')
+  res.send('Hello Express from CI/CD 😍.')
 })
 
 app.listen(PORT, () => {
