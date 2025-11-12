@@ -24,7 +24,7 @@ jobs:
           echo "$PRIVATE_KEY" > private_key.pem # Write the private key to a file
           chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
-            cd "/home/bcumbie/solid-guide-subdomain"
+            cd solid-guide-subdomain
 
             # Update code first
             git pull --ff-only
