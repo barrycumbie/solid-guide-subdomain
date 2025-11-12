@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH stuff
+      - name: Deploy via SSH (with diagnostics and safer fallbacks)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_USER: bcumbie
@@ -18,6 +18,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "--- Workflow environment ---"
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "Runner: $(uname -a)"
 
           # Ensure secret available
           if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
@@ -29,34 +34,56 @@ jobs:
           printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > private_key.pem
           chmod 600 private_key.pem
 
-          # Run commands on the VM (note the quoted EOF)
-          ssh -vvv -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem "$SSH_USER@$SSH_HOST" 'echo OK && exit' || true
+          echo "Testing SSH connectivity to $SSH_USER@$SSH_HOST"
+          # Test SSH quickly and fail on error so the logs surface the issue
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -o ConnectTimeout=10 "$SSH_USER@$SSH_HOST" 'echo SSH_OK' 
+
+          echo "SSH probe succeeded, starting remote deploy commands"
 
           ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem -tt "$SSH_USER@$SSH_HOST" <<'EOF'
             set -euo pipefail
+
+            echo "---- Remote diagnostics ----"
+            echo "user: $(whoami)"
+            echo "cwd: $(pwd)"
+            echo "node: $(node -v || echo 'node missing')"
+            echo "npm: $(npm -v || echo 'npm missing')"
+            echo "pm2: $(pm2 -v || echo 'pm2 missing')"
+
             export PATH="$PATH:$(npm config get prefix)/bin:/usr/local/bin:/usr/bin"
 
             # go to your repo
             cd "$HOME/solid-guide-subdomain" || cd "/home/bcumbie/solid-guide-subdomain"
 
             # pull latest first
+            echo "Running: git pull --ff-only"
             git pull --ff-only
 
-            # install deps (ci only if lock exists)
+            # install deps (ci only if lock exists), include fallbacks for older npm
             if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-              npm ci --omit=dev
+              echo "Lockfile found. Attempting npm ci (production-only)..."
+              npm ci --omit=dev || npm ci --only=production || npm install --omit=dev
             else
+              echo "No lockfile, running npm install --omit=dev"
               npm install --omit=dev
             fi
 
-            # idempotent PM2
-            if pm2 describe "ideas-app" >/dev/null 2>&1; then
-              PORT=3000 pm2 restart "ideas-app" --update-env
+            # idempotent PM2 start/restart (check pm2 exists first)
+            if command -v pm2 >/dev/null 2>&1; then
+              if pm2 describe "ideas-app" >/dev/null 2>&1; then
+                echo "Restarting pm2 process ideas-app"
+                PORT=3000 pm2 restart "ideas-app" --update-env
+              else
+                echo "Starting pm2 process ideas-app"
+                PORT=3000 pm2 start "app.mjs" --name "ideas-app" --env production
+              fi
+
+              pm2 save || true
             else
-              PORT=3000 pm2 start "app.mjs" --name "ideas-app" --env production
+              echo "pm2 not installed; please install pm2 on the remote host or adapt the deployment." >&2
+              exit 2
             fi
 
-            pm2 save
             exit
           EOF
 
