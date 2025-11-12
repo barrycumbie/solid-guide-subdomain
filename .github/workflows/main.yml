@@ -1,45 +1,18 @@
-name: Deploy Ideas
-
+name: deploy-ideas
+# Trigger this workflow on pushes to the specified branch
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: deploy-ideas
-  cancel-in-progress: false
+  pull_request:
+    branches:
+      - main 
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Run this job on the latest Ubuntu version
 
     steps:
-            - name: SSH debug
+      - name: deploy via SSH 
         env:
-          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_USER: bcumbie
-          SSH_HOST: 35.208.101.221
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${PRIVATE_KEY:-}" ]; then
-            echo "::error::SSH_PRIVATE_KEY is empty (secrets unavailable)."
-            exit 1
-          fi
-
-          printf '%s' "$PRIVATE_KEY" | tr -d '\r' > private_key.pem
-          chmod 600 private_key.pem
-
-          echo "Computed public key (safe to print):"
-          ssh-keygen -y -f private_key.pem
-
-          echo "Trying SSH with -vvv…"
-          ssh -vvv -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i private_key.pem "$SSH_USER@$SSH_HOST" 'echo OK && exit' || true
-
-    
-      - name: Deploy via SSH (PM2)
-        env:
-          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }} # Reference the private key stored in GitHub Secrets
           SSH_USER: bcumbie
           SSH_HOST: 35.208.101.221
           REPO_DIR: /home/bcumbie/solid-guide-subdomain
@@ -51,9 +24,6 @@ jobs:
           echo "$PRIVATE_KEY" > private_key.pem # Write the private key to a file
           chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
-          # Establish an SSH connection and execute commands on the remote server
-          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt bcumbie@35.208.101.221 <<EOF  
-            # Here Document, allows for multiple commands while connectd to server 
             cd "/home/bcumbie/solid-guide-subdomain"
 
             # Update code first
@@ -76,7 +46,6 @@ jobs:
             pm2 save
             exit
           EOF
+          rm -f private_key.pem # Remove the private key file after use for security
 
-       
-          rm -f private_key.pem
 
