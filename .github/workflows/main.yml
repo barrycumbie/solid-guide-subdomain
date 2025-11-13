@@ -10,15 +10,15 @@ jobs:
     runs-on: ubuntu-latest # Run this job on the latest Ubuntu version
 
     steps:
-      - name: Start odea
+      - name: Start idea
         env:
-          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }} # Reference the private key stored in GitHub Secrets
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY_CLASS }} # Reference the private key stored in GitHub Secrets
         run: |
           echo "$PRIVATE_KEY" > private_key.pem # Write the private key to a file
           chmod 600 private_key.pem # Set the appropriate permissions for the key file
 
           # Establish an SSH connection and execute commands on the remote server
-          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt bcumbie@35.208.101.221 <<EOF  
+          ssh -o StrictHostKeyChecking=no -i private_key.pem -tt bcumbie@35.208.179.130 <<EOF  
             # Here Document, allows for multiple commands while connectd to server 
             cd solid-guide-subdomain #go to repo
             npm ci
